@@ -11,8 +11,7 @@ from torch.utils import data
 from torchmetrics.classification import MulticlassConfusionMatrix
 from ucimlrepo import fetch_ucirepo
 
-# for now we're training without these attributes. Should be changed according to the methodology.
-PROTECTED_ATTRS = ["sex", "race", "age"]
+PROTECTED_ATTRS = []
 
 
 class LitMLP(L.LightningModule):
@@ -33,8 +32,15 @@ class LitMLP(L.LightningModule):
 
     def training_step(self, batch, batch_idx):
         x, y = batch
-        loss = F.cross_entropy(self(x), y)
-        self.log("train_loss", loss)
+        logits = self(x)
+        loss = F.cross_entropy(logits, y)
+        self.log("train_loss", loss, on_step=False, on_epoch=True)
+        self.log(
+            "train_acc",
+            (logits.argmax(dim=1) == y).float().mean(),
+            on_step=False,
+            on_epoch=True,
+        )
         return loss
 
     def _eval_step(self, batch, prefix):
@@ -76,6 +82,16 @@ def fetch_adult(cache=Path("data/adult.csv"), protected_attributes=PROTECTED_ATT
     return df.drop(columns=classes), df["income"]
 
 
+def split_indices(n, val_frac=0.15, test_frac=0.15, seed=0):
+    g = torch.Generator().manual_seed(seed)
+    perm = torch.randperm(n, generator=g).numpy()
+    n_val, n_test = int(n * val_frac), int(n * test_frac)
+    val_idx = perm[:n_val]
+    test_idx = perm[n_val : n_val + n_test]
+    train_idx = perm[n_val + n_test :]
+    return train_idx, val_idx, test_idx
+
+
 def load_adult(val_frac=0.15, test_frac=0.15, seed=0):
     X, y = fetch_adult()
     y = y.str.strip().str.rstrip(".") == ">50K"
@@ -86,14 +102,9 @@ def load_adult(val_frac=0.15, test_frac=0.15, seed=0):
     X[cat_cols] = X[cat_cols].fillna("?")
     X = pd.get_dummies(X, columns=list(cat_cols), dtype=float)
 
-    g = torch.Generator().manual_seed(seed)
-    perm = torch.randperm(len(X), generator=g).numpy()
-    n_val, n_test = int(len(X) * val_frac), int(len(X) * test_frac)
-    val_idx = perm[:n_val]
-    test_idx = perm[n_val : n_val + n_test]
-    train_idx = perm[n_val + n_test :]
-
-    mean, std = X.iloc[train_idx][num_cols].mean(), X.iloc[train_idx][num_cols].std()
+    train_idx, val_idx, test_idx = split_indices(len(X), val_frac, test_frac, seed)
+    mean = X.iloc[train_idx][num_cols].mean()
+    std = X.iloc[train_idx][num_cols].std()
     X[num_cols] = (X[num_cols] - mean) / std
 
     X = torch.tensor(X.values, dtype=torch.float32)
@@ -118,18 +129,26 @@ def plot_confusion_matrix(cm, labels, path="confusion_matrix.png"):
     fig.savefig(path, bbox_inches="tight")
 
 
+
 if __name__ == "__main__":
+    N_RUNS = 5
     train, val, test = load_adult()
     input_dim = train.tensors[0].shape[1]
 
-    model = LitMLP(input_dim, hidden_dims=[64, 32, 16], lr=1e-3)
-    trainer = L.Trainer(max_epochs=31, log_every_n_steps=10)
-    trainer.fit(
-        model,
-        data.DataLoader(train, batch_size=1024, shuffle=True, num_workers=0),
-        data.DataLoader(val, batch_size=1024, num_workers=0),
-    )
-    trainer.test(model, data.DataLoader(test, batch_size=1024, num_workers=0))
+    for seed in range(N_RUNS):
+        L.seed_everything(seed)
+        model = LitMLP(input_dim, hidden_dims=[64, 32, 16], lr=1e-3)
+        trainer = L.Trainer(max_epochs=31, log_every_n_steps=10)
+        trainer.fit(
+            model,
+            data.DataLoader(train, batch_size=1024, shuffle=True, num_workers=0),
+            data.DataLoader(val, batch_size=1024, num_workers=0),
+        )
+        trainer.test(model, data.DataLoader(test, batch_size=1024, num_workers=0))
 
-    print(model.confmat)
-    plot_confusion_matrix(model.confmat, ["<=50K", ">50K"])
+        print(model.confmat)
+        plot_confusion_matrix(
+            model.confmat,
+            ["<=50K", ">50K"],
+            path=Path(trainer.log_dir) / "confusion_matrix.png",  # type:ignore
+        )
