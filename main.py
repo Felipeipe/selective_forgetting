@@ -11,7 +11,7 @@ from torch.utils import data
 from torchmetrics.classification import MulticlassConfusionMatrix
 from ucimlrepo import fetch_ucirepo
 
-PROTECTED_ATTRS = ["sex", "race", "age", "native-country"]
+PROTECTED_ATTRS = ["sex", "race", "age"]
 
 
 class LitMLP(L.LightningModule):

@@ -22,6 +22,15 @@ def output_for_layer(run, test):
     x4 = model.net (x)
     return x1.numpy(), x2.numpy(), x3.numpy(), x4.numpy()
 
+def test_money():
+    # money of each test row, using the same split as load_adult
+    _, y = fetch_adult(cache=Path("data/adult.csv"), protected_attributes=[])
+    y = y.str.strip().str.rstrip(".") == ">50K"
+    _, _, test_idx = split_indices(len(y))
+    return y.to_numpy()[test_idx].astype(int)
+
+
+
 def test_sex():
     # sex of each test row, using the same split as load_adult
     X, _ = fetch_adult(cache=Path("data/adult.csv"), protected_attributes=[])
@@ -88,9 +97,15 @@ if __name__ == "__main__":
     gender = test_sex()
     race = test_race()
     age = test_age()
+    money = test_money()
     native_country = test_native_country()
-    df = pd.DataFrame({'Layer1': X1_list, 'Layer2': X2_list, 'Layer3': X3_list, 'Layer4': X4_list, 'Gender': encoded_list(gender), 'Race': encoded_list(race), 'Age': list (age), 'Native Country': encoded_list(native_country)})
+    df = pd.DataFrame({'Layer1': X1_list, 'Layer2': X2_list, 'Layer3': X3_list, 'Layer4': X4_list, 'Gender': encoded_list(gender), 'Race': encoded_list(race), 'Age': list (age), 'Native Country': encoded_list(native_country), "Money": list (money)})
     print(df)
+
+    output1_money = estimador_MINE (df, 'Layer1', 'Money')
+    output2_money = estimador_MINE (df, 'Layer2', 'Money')
+    output3_money = estimador_MINE (df, 'Layer3', 'Money')
+    output4_money = estimador_MINE (df, 'Layer4', 'Money')
 
     output1_gender = estimador_MINE (df, 'Layer1', 'Gender')
     output2_gender = estimador_MINE (df, 'Layer2', 'Gender')
@@ -106,12 +121,6 @@ if __name__ == "__main__":
     output2_age = estimador_MINE (df, 'Layer2', 'Age')
     output3_age = estimador_MINE (df, 'Layer3', 'Age')
     output4_age = estimador_MINE (df, 'Layer4', 'Age')
-
-    output1_native_country = estimador_MINE (df, 'Layer1', 'Native Country')
-    output2_native_country = estimador_MINE (df, 'Layer2', 'Native Country')
-    output3_native_country = estimador_MINE (df, 'Layer3', 'Native Country')
-    output4_native_country = estimador_MINE (df, 'Layer4', 'Native Country')
-
     
     print ("Estimador MINE para Layer1 y Gender:", output1_gender [0])
     print ("Estimador MINE para Layer2 y Gender:", output2_gender [0])
@@ -128,22 +137,22 @@ if __name__ == "__main__":
     print ("Estimador MINE para Layer3 y Age:", output3_age [0])
     print ("Estimador MINE para Layer4 y Age:", output4_age [0])
 
-    print ("Estimador MINE para Layer1 y Native Country:", output1_native_country [0])
-    print ("Estimador MINE para Layer2 y Native Country:", output2_native_country [0])
-    print ("Estimador MINE para Layer3 y Native Country:", output3_native_country [0])
-    print ("Estimador MINE para Layer4 y Native Country:", output4_native_country [0])
+    print ("Estimador MINE para Layer1 y Money:", output1_money [0])
+    print ("Estimador MINE para Layer2 y Money:", output2_money [0])
+    print ("Estimador MINE para Layer3 y Money:", output3_money [0])
+    print ("Estimador MINE para Layer4 y Money:", output4_money [0])
 
     layer = ['Layer1', 'Layer2', 'Layer3', 'Output Layer']
     output_gender = [next(iter(output1_gender[0].values())), next(iter(output2_gender[0].values())), next(iter(output3_gender[0].values())), next(iter(output4_gender[0].values()))]
     output_race = [next(iter(output1_race[0].values())), next(iter(output2_race[0].values())), next(iter(output3_race[0].values())), next(iter(output4_race[0].values()))]
     output_age = [next(iter(output1_age[0].values())), next(iter(output2_age[0].values())), next(iter(output3_age[0].values())), next(iter(output4_age[0].values()))]
-    output_native_country = [next(iter(output1_native_country[0].values())), next(iter(output2_native_country[0].values())), next(iter(output3_native_country[0].values())), next(iter(output4_native_country[0].values()))]
-    
+    output_money = [next(iter(output1_money[0].values())), next(iter(output2_money[0].values())), next(iter(output3_money[0].values())), next(iter(output4_money[0].values()))]
+
     fig, ax = plt.subplots()
     ax.plot(layer, output_gender, marker='o', label="Gender")
     ax.plot(layer, output_race, marker='s', label="Race")
     ax.plot(layer, output_age, marker='^', label="Age")
-    ax.plot(layer, output_native_country, marker='d', label="Native Country")
+    ax.plot(layer, output_money, marker='d', label="Money")
     ax.set_title("Basic Components of Matplotlib Figure")
     ax.set_xlabel("X-Axis")
     ax.set_ylabel("Y-Axis")
