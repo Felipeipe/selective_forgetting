@@ -11,7 +11,7 @@ from torch.utils import data
 from torchmetrics.classification import MulticlassConfusionMatrix
 from ucimlrepo import fetch_ucirepo
 
-PROTECTED_ATTRS = ["sex", "race", "age", "native-country"]
+PROTECTED_ATTRS = ["sex", "race", "age"]
 
 
 class LitMLP(L.LightningModule):
@@ -92,8 +92,8 @@ def split_indices(n, val_frac=0.15, test_frac=0.15, seed=0):
     return train_idx, val_idx, test_idx
 
 
-def load_adult(val_frac=0.15, test_frac=0.15, seed=0):
-    X, y = fetch_adult()
+def load_adult(val_frac=0.15, test_frac=0.15, seed=0, protected_attributes=PROTECTED_ATTRS):
+    X, y = fetch_adult(protected_attributes=protected_attributes)
     y = y.str.strip().str.rstrip(".") == ">50K"
 
     num_cols = X.select_dtypes(include="number").columns

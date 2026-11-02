@@ -13,3 +13,10 @@ usar implementación sklearn.feature_selection.mutual_info_classif https://sciki
 Arquitectura a usar: MLP (se puede variar número de neuronas y capas).
 
 Link de overleaf a informe: https://www.overleaf.com/project/6ab0585e66eec1d9c494ee01
+
+Instalación
+
+```bash
+pip install -r requirements.txt
+pip install --no-deps torch-mist==0.2.17
+```
