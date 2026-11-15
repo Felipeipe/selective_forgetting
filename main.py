@@ -150,5 +150,5 @@ if __name__ == "__main__":
         plot_confusion_matrix(
             model.confmat,
             ["<=50K", ">50K"],
-            path=Path(trainer.log_dir) / "confusion_matrix.png",  # type:ignore
+            path=Path(trainer.log_dir) / "confusion_matrix.pdf",  # type:ignore
         )

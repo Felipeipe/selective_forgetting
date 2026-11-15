@@ -30,8 +30,16 @@ plt.rcParams.update(
 )
 
 
-def run_dirs():
-    return sorted(LOG_DIR.glob("version_*"), key=lambda p: int(p.name.split("_")[1]))
+# experiment -> (runs in lightning_logs, attributes removed from the model input).
+# The suffix is appended to every figure name of that experiment.
+EXPERIMENTS = {
+    "": (range(0, 5), ["sex", "race", "age"]),
+    "_con_protegidas": (range(5, 10), []),
+}
+
+
+def run_dirs(versions):
+    return [LOG_DIR / f"version_{v}" for v in versions]
 
 
 def epoch_curves(run):
@@ -89,8 +97,9 @@ def confusion_matrix(y, pred):
 
 
 def test_sex():
-    # sex of each test row, using the same split as load_adult
-    X, _ = fetch_adult()
+    # sex of each test row, using the same split as load_adult. Sex is not a model
+    # input, so read it from the raw data (no attributes dropped)
+    X, _ = fetch_adult(protected_attributes=[])
     _, _, test_idx = split_indices(len(X))
     return X["sex"].to_numpy()[test_idx]
 
@@ -154,28 +163,29 @@ def test_metrics(run):
 
 if __name__ == "__main__":
     FIG_DIR.mkdir(parents=True, exist_ok=True)
-    runs = run_dirs()
-    print(f"{len(runs)} runs: {[r.name for r in runs]}")
-
-    metrics = pd.DataFrame([test_metrics(r) for r in runs])
-    print(metrics.agg(["mean", "std"]))
-
-    curves = [epoch_curves(r) for r in runs]
-    plot_loss_curves(curves, FIG_DIR / "loss_curves.pdf")
-    plot_accuracy_curves(curves, FIG_DIR / "accuracy_curves.pdf")
-
-    _, _, test = load_adult()
-    y = test.tensors[1].numpy()
-    preds = [test_predictions(r, test) for r in runs]
-    cms = np.stack([confusion_matrix(y, p) for p in preds])
-    plot_confusion_matrix(cms, FIG_DIR / "confusion_matrix.pdf")
-    print("confusion matrices (counts):\n", cms)
-
     sex = test_sex()
-    cms_by_sex = {
-        label: np.stack([confusion_matrix(y[sex == value], p[sex == value]) for p in preds])
-        for label, value in [("Mujeres", "Female"), ("Hombres", "Male")]
-    }
-    plot_confusion_matrix_by_group(cms_by_sex, FIG_DIR / "confusion_matrix_by_sex.pdf")
-    for label, group_cms in cms_by_sex.items():
-        print(f"\n{label}:\n", group_metrics(group_cms).T.round(3))
+
+    for suffix, (versions, removed) in EXPERIMENTS.items():
+        runs = run_dirs(versions)
+        print(f"\n===== {[r.name for r in runs]}, attributes removed: {removed}")
+
+        metrics = pd.DataFrame([test_metrics(r) for r in runs])
+        print(metrics.agg(["mean", "std"]))
+
+        curves = [epoch_curves(r) for r in runs]
+        plot_loss_curves(curves, FIG_DIR / f"loss_curves{suffix}.pdf")
+        plot_accuracy_curves(curves, FIG_DIR / f"accuracy_curves{suffix}.pdf")
+
+        _, _, test = load_adult(protected_attributes=removed)
+        y = test.tensors[1].numpy()
+        preds = [test_predictions(r, test) for r in runs]
+        cms = np.stack([confusion_matrix(y, p) for p in preds])
+        plot_confusion_matrix(cms, FIG_DIR / f"confusion_matrix{suffix}.pdf")
+
+        cms_by_sex = {
+            label: np.stack([confusion_matrix(y[sex == value], p[sex == value]) for p in preds])
+            for label, value in [("Mujeres", "Female"), ("Hombres", "Male")]
+        }
+        plot_confusion_matrix_by_group(cms_by_sex, FIG_DIR / f"confusion_matrix_by_sex{suffix}.pdf")
+        for label, group_cms in cms_by_sex.items():
+            print(f"\n{label}:\n", group_metrics(group_cms).T.round(3))
