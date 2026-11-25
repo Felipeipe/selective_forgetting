@@ -77,7 +77,7 @@ if __name__ == "__main__":
         )
 
         # KSG, per neuron
-        """"result = mi_table(model, x, y, Z)
+        result = mi_table(model, x, y, Z)
         result.to_csv(NEURON_CSV, index=False)
         output_result = output_mi_table(model, x, y, Z)
         output_result.to_csv(OUTPUT_CSV, index=False)
@@ -97,4 +97,4 @@ if __name__ == "__main__":
         plot_mine(mine, MINE_FIG)
         print(f"saved {MINE_CSV}, {MINE_FIG}")
         print("\nMINE per layer (bits):")
-        print(mine.round(4))"""
+        print(mine.round(4))

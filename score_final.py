@@ -105,7 +105,7 @@ def score_model (original_accuracy, original_F1, original_MI_neurons, original_M
     F1_score = (pruned_F1 - original_F1) / original_F1
     MI_score_neurons = - (pruned_MI_neurons - original_MI_neurons) / (original_MI_neurons)
     MI_score_layers = - (pruned_MI_layers - original_MI_layers) / original_MI_layers
-    return MI_score_neurons + MI_score_layers + accuracy_score + F1_score
+    return MI_score_neurons + MI_score_layers + 1.5 *(accuracy_score + F1_score)
 
 
 def comparison_MI (original_MI_selected, pruned_MI_selected, original_MI_attribute1, pruned_MI_attribute1, original_MI_attribute2, pruned_MI_attribute2):
