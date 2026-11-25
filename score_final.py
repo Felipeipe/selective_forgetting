@@ -2,9 +2,8 @@ import json
 import pandas as pd
 from pathlib import Path
 from prune import get_parameters
-import re
 import matplotlib.pyplot as plt
-import seaborn as sns
+import numpy as np
 ROOT_DIR = Path("pruned_models")
 
 with open("experiments/metrics.json", "r") as f:
@@ -15,7 +14,86 @@ mi_table_final_neuronas_original = pd.read_csv("experiments/mi_output.csv")
 accuracy_original = metrics_original["balanced_accuracy"]
 f1_original = metrics_original["f1_macro"]
 
+def generate_heatmaps(results, graph_dir):
+    df = pd.DataFrame(results)
 
+    score_columns = {
+        "score_model": "General Score",
+        "comparison_MI_neurons": "Comparison MI Neurons",
+        "comparison_MI_layers": "Comparison MI Layers"
+    }
+
+    attributes = df["attribute"].unique()
+
+    for attribute in attributes:
+
+        df_attribute = df[df["attribute"] == attribute]
+
+        output_dir = graph_dir / attribute
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        for score_column, title in score_columns.items():
+
+            heatmap_data = df_attribute.pivot(
+                index="scalar",
+                columns="percentage",
+                values=score_column
+            )
+
+            heatmap_data = heatmap_data.sort_index()
+            heatmap_data = heatmap_data.reindex(
+                sorted(heatmap_data.columns), axis=1
+            )
+
+            values = heatmap_data.to_numpy(dtype=float)
+
+            fig, ax = plt.subplots(figsize=(8, 6))
+
+            # Crear heatmap
+            im = ax.imshow(
+                values,
+                cmap="RdYlGn",
+                aspect="auto"
+            )
+
+            # Agregar valores a cada celda
+            for i in range(values.shape[0]):
+                for j in range(values.shape[1]):
+
+                    if np.isfinite(values[i, j]):
+                        ax.text(
+                            j, i,
+                            f"{values[i, j]:.3f}",
+                            ha="center",
+                            va="center",
+                            color="black"
+                        )
+
+            # Configurar ejes
+            ax.set_xticks(range(len(heatmap_data.columns)))
+            ax.set_xticklabels(heatmap_data.columns)
+
+            ax.set_yticks(range(len(heatmap_data.index)))
+            ax.set_yticklabels(heatmap_data.index)
+
+            ax.set_xlabel("Pruning Percentage")
+            ax.set_ylabel("Pruning Scalar")
+            ax.set_title(f"{title} - {attribute}")
+
+            # Barra de color
+            fig.colorbar(im, ax=ax, label=title)
+
+            fig.tight_layout()
+
+            fig.savefig(
+                output_dir / f"{score_column}.png",
+                dpi=300,
+                bbox_inches="tight"
+            )
+
+            plt.close(fig)
+
+    print(f"Heatmaps guardados en: {graph_dir}")
 
 def MI_attribute(mi_table_neurons, mi_table_layers, attribute_neurons, attribute_layers):
     mi_neurons = mi_table_neurons[attribute_neurons].iloc[0]
@@ -54,8 +132,10 @@ if __name__ == "__main__":
         list_mi_layers_original.append(mi_layers)
 
     # Evaluar modelos podados
+    results = []
+    GRAPH_DIR = ROOT_DIR / "graphs"
+    GRAPH_DIR.mkdir(parents=True, exist_ok=True)
     for RUN in ROOT_DIR.rglob("pruned_model.pth"):
-
         OUT_DIR = RUN.parent
         print ("OUT DIR:", OUT_DIR)
         OUTPUT_CSV = OUT_DIR / "mi_output.csv"
@@ -64,8 +144,8 @@ if __name__ == "__main__":
         parameters_path = OUT_DIR / "parameters.json"
 
         with open(parameters_path, "r") as f:
-            attribute_selected = json.load(f)["attribute"]
-
+            parameters = json.load(f)
+        attribute_selected = parameters ["attribute"]
         with open(metrics_path, "r") as f:
             metrics = json.load(f)
         accuracy_pruned = metrics ["balanced_accuracy"]
@@ -121,3 +201,13 @@ if __name__ == "__main__":
 
         with open(metrics_path, "w") as f:
             json.dump(metrics, f, indent=4)
+
+        results.append({
+            "attribute": parameters ["attribute"],
+            "scalar": parameters ["scalar"],
+            "percentage": parameters ["percentage"],
+            "score_model": float(score_model_prune),
+            "comparison_MI_neurons": float(comparison_score_MI_neurons),
+            "comparison_MI_layers": float(comparison_score_MI_layer)
+        })
+    generate_heatmaps(results, GRAPH_DIR)

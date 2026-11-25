@@ -2,8 +2,8 @@
 __pycache__/
 *.py[codz]
 *$py.class
-report/
-experiments/
+#report/
+#experiments/
 .vscode/
 # C extensions
 *.so
@@ -11,13 +11,13 @@ experiments/
 # Distribution / packaging
 .Python
 build/
-data/
+#data/
 confusion_matrix.png
 develop-eggs/
 dist/
 downloads/
 eggs/
-lightning_logs
+#lightning_logs
 .eggs/
 lib/
 lib64/
