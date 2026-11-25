@@ -1,0 +1,18 @@
+{
+    "accuracy": 0.7073437073437073,
+    "balanced_accuracy": 0.7784735911694324,
+    "f1_macro": 0.6846817034435603,
+    "confusion_matrix": [
+        [
+            3573,
+            1995
+        ],
+        [
+            149,
+            1609
+        ]
+    ],
+    "score model": 0.4277088603535433,
+    "Comparison score MI Neurons": 0.21716124903427836,
+    "Comparison score MI layers": 0.2626266366725995
+}

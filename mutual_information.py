@@ -7,7 +7,7 @@ Two analyses:
 """
 
 from pathlib import Path
-
+from sklearn.metrics import balanced_accuracy_score, f1_score
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -16,9 +16,11 @@ from sklearn.feature_selection import mutual_info_classif, mutual_info_regressio
 from sklearn.metrics import mutual_info_score
 from torch import nn
 from torch_mist import estimate_mi
-
+import lightning as L
+from torch.utils import data
 from main import LitMLP, fetch_adult, load_adult, split_indices
 from results import INK  # importing results also applies the shared matplotlib style
+import json
 
 RUN = Path("lightning_logs/mutual_info_model")  # model analyzed in the report
 OUT_DIR = Path("experiments")
@@ -44,6 +46,7 @@ MINE_VARIABLES = {
 
 
 def load_model(run, input_dim):
+    print ("loading model from", run)
     ckpt = next((run / "checkpoints").glob("*.ckpt"))
     model = LitMLP.load_from_checkpoint(ckpt, map_location="cpu").eval()
     if model.hparams.input_dim != input_dim:
@@ -261,10 +264,41 @@ def plot_mine(table, path):
 if __name__ == "__main__":
     HEATMAP_FIG.parent.mkdir(parents=True, exist_ok=True)
 
+    # Split para información mútua: train, val o test. Se usa el mismo split para KSG y MINE para poder comparar.
     x, y = load_adult()[SPLITS[SPLIT]].tensors
     y = y.numpy()
     Z = protected_attributes(SPLIT)
+
+    # Obtener accuracy y matriz de confusión del modelo original
+    train, val, test = load_adult()
+    trainer = L.Trainer(accelerator="auto", devices="auto", logger=False)
     model = load_model(RUN, x.shape[1])
+    results = trainer.test(model=model, dataloaders=data.DataLoader( test, batch_size=1024,num_workers=0))
+    cm = model.confmat.cpu().numpy()
+    y_true = []
+    y_pred = []
+
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            y_true.extend([i] * cm[i, j])
+            y_pred.extend([j] * cm[i, j])
+
+    accuracy = np.trace(cm) / np.sum(cm)
+    balanced_accuracy = balanced_accuracy_score(y_true, y_pred)
+    f1_macro = f1_score(y_true, y_pred, average="macro")
+    
+    metrics = {
+        "accuracy": float(accuracy),
+        "balanced_accuracy": float(balanced_accuracy),
+        "f1_macro": float(f1_macro),
+        "confusion_matrix": cm.tolist()
+    }
+    with open(OUT_DIR / "metrics.json", "w") as f:
+        json.dump(metrics, f, indent=4)
+
+
+    # Obtener información mutua por neurona y por capa, y guardar resultados
+    
     print(f"run: {RUN}, split: {SPLIT} ({len(y)} rows)")
 
     # KSG, per neuron
