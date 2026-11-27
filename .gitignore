@@ -7,7 +7,8 @@ __pycache__/
 .vscode/
 # C extensions
 *.so
-
+report/
+lightning_logs/
 # Distribution / packaging
 .Python
 build/
