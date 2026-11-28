@@ -20,7 +20,11 @@ def generate_heatmaps(results, graph_dir):
     score_columns = {
         "score_model": "General Score",
         "comparison_MI_neurons": "Comparison MI Neurons",
-        "comparison_MI_layers": "Comparison MI Layers"
+        "comparison_MI_layers": "Comparison MI Layers",
+        "MI neurons": "MI Neurons",
+        "MI layers": "MI Layers",
+        "F1": "F1 Score",
+        "Balanced accuracy": "Balanced Accuracy"
     }
 
     attributes = df["attribute"].unique()
@@ -198,7 +202,7 @@ if __name__ == "__main__":
         )
         metrics ["Comparison score MI layers"] = comparison_score_MI_layer
         print("Comparison MI layers:", comparison_score_MI_layer)
-
+        
         with open(metrics_path, "w") as f:
             json.dump(metrics, f, indent=4)
 
@@ -208,6 +212,10 @@ if __name__ == "__main__":
             "percentage": parameters ["percentage"],
             "score_model": float(score_model_prune),
             "comparison_MI_neurons": float(comparison_score_MI_neurons),
-            "comparison_MI_layers": float(comparison_score_MI_layer)
+            "comparison_MI_layers": float(comparison_score_MI_layer),
+            "MI neurons": list_mi_neurons[idx_selected], 
+            "MI layers": list_mi_layers [idx_selected],
+            "F1": float (F1_pruned),
+            "Balanced accuracy": float (accuracy_pruned),
         })
     generate_heatmaps(results, GRAPH_DIR)

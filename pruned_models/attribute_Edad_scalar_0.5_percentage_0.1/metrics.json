@@ -1,18 +1,18 @@
 {
-    "accuracy": 0.8487578487578488,
-    "balanced_accuracy": 0.7876260248715232,
-    "f1_macro": 0.7905519440575146,
+    "accuracy": 0.8508053508053508,
+    "balanced_accuracy": 0.789751468655604,
+    "f1_macro": 0.7930985192545486,
     "confusion_matrix": [
         [
-            5040,
-            528
+            5051,
+            517
         ],
         [
-            580,
-            1178
+            576,
+            1182
         ]
     ],
-    "score model": 0.44810862546385727,
-    "Comparison score MI Neurons": 0.508043671084887,
-    "Comparison score MI layers": 0.2589724309556901
+    "score model": 0.18842255863163188,
+    "Comparison score MI Neurons": -0.2204676576201237,
+    "Comparison score MI layers": -0.19553711739878593
 }

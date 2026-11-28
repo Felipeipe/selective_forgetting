@@ -23,7 +23,7 @@ def get_parameters ():
     neurons_per_layer = []
     atribute_names_neurons = list (mi_neurona.columns) [-3:]
     atribute_names_layers = list (mi_capa.columns) [1:4]
-    atribute_names_outputs = list (mi_output.columns) [1:4]
+    atribute_names_outputs = list (mi_output.columns) [2:]
     for layer in layer_names: 
         neurons_per_layer.append(len(mi_neurona [mi_neurona ["layer"] == layer]))
     return list (layer_names), neurons_per_layer, atribute_names_neurons, atribute_names_layers, atribute_names_outputs
@@ -85,8 +85,6 @@ def full_prune_model(model, layer_names, neurons_per_layer, percentage_prune, at
 
 if __name__ == "__main__":
     x, y = load_adult()[SPLITS[SPLIT]].tensors
-    y = y.numpy()
-    Z = protected_attributes(SPLIT)
     model = load_model(RUN, x.shape[1])
     layer_names, neurons_per_layer, atribute_names_neurons, atribute_names_layers, _ = get_parameters()
     print ("Layer names:", layer_names)
@@ -104,11 +102,11 @@ if __name__ == "__main__":
         for scalar in [0.5, 1.0, 1.5, 2.0]:
             for percentage_prune in [0.1, 0.2, 0.3, 0.4]:
                 print ("Pruning with scalar:", scalar, "and percentage:", percentage_prune)
-                #model = load_model(RUN, x.shape[1])
-                #model = full_prune_model(model, layer_names, neurons_per_layer, percentage_prune, attribute_layer, attribute_neuron, scalar)
+                model = load_model(RUN, x.shape[1])
+                model = full_prune_model(model, layer_names, neurons_per_layer, percentage_prune, attribute_layer, attribute_neuron, scalar)
                 save_path = Path(f"pruned_models/attribute_{attribute_layer}_scalar_{scalar}_percentage_{percentage_prune}")
                 save_path.parent.mkdir(parents=True, exist_ok=True)
-                #torch.save(model.state_dict(), save_path / "pruned_model.pth")
+                torch.save(model.state_dict(), save_path / "pruned_model.pth")
                 print(f"Modelo podado guardado en: {save_path}")
                 parameters= {
                     "attribute": attribute_layer,

@@ -22,18 +22,23 @@ from main import LitMLP, fetch_adult, load_adult, split_indices
 from results import INK  # importing results also applies the shared matplotlib style
 import json
 
-RUN = Path("lightning_logs/mutual_info_model")  # model analyzed in the report
-OUT_DIR = Path("experiments")
+RUN = Path("lightning_logs/alternative_info_model")  # model analyzed in the report
+OUT_DIR = Path("experiments_alternative")
 NEURON_CSV = OUT_DIR / "mi_per_neuron.csv"
+TEST_NEURON_CSV = OUT_DIR / "mi_per_neuron_test.csv"
 OUTPUT_CSV = OUT_DIR / "mi_output.csv"
+TEST_OUTPUT_CSV = OUT_DIR / "mi_output_test.csv"
 MINE_CSV = OUT_DIR / "mi_mine_por_capa.csv"
+TEST_MINE_CSV = OUT_DIR / "mi_mine_por_capa_test.csv"
 HEATMAP_FIG = OUT_DIR / "figures/mi_heatmap.pdf"
+TEST_HEATMAP_FIG = OUT_DIR / "figures/mi_heatmap_test.pdf"
 MINE_FIG = OUT_DIR / "figures/mi_mine_por_capa.pdf"
+TEST_MINE_FIG = OUT_DIR / "figures/mi_mine_por_capa_test.pdf"
 
 SPLITS = {"train": 0, "val": 1, "test": 2}
 # Both analyses use the same split so they can be compared. Once these estimates are
 # used to decide what to prune, switch to "train": the test set must not guide interventions.
-SPLIT = "test"
+SPLIT = "train"
 PROTECTED = {"sex": "discrete", "race": "discrete", "age": "continuous"}
 
 # MINE plot: variable -> (label, color, marker); colors from matplotlib's tab10
@@ -68,12 +73,28 @@ def hidden_activations(model, x):
             acts.append(h.numpy())
     return acts
 
+@torch.no_grad()
+def get_representations(model, x):
+    """Obtiene las activaciones ocultas y los logits en una sola pasada."""
+    activations = []
+    h = x
 
-def protected_attributes(split):
+    for layer in model.net:
+        h = layer(h)
+        if isinstance(layer, nn.ReLU):
+            activations.append(h.numpy())
+
+    return activations, h.numpy()
+
+def protected_attributes(split, X):
+    idx = split_indices(len(X))[SPLITS[split]]
+    return X.iloc[idx][list(PROTECTED)].reset_index(drop=True)
+
+"""def protected_attributes(split):
     # the protected attributes are not model inputs, so read them from the raw data
     X, _ = fetch_adult(protected_attributes=[])
     idx = split_indices(len(X))[SPLITS[split]]
-    return X.iloc[idx][list(PROTECTED)].reset_index(drop=True)
+    return X.iloc[idx][list(PROTECTED)].reset_index(drop=True)"""
 
 
 # ---------------------------------------------------------------- KSG, per neuron
@@ -83,9 +104,9 @@ def mutual_information(U, target, kind, seed=0):
     """I(U_i; target) in bits, for every column U_i of U."""
     if kind == "discrete":
         codes, _ = pd.factorize(target)
-        mi = mutual_info_classif(U, codes, discrete_features=False, random_state=seed)
+        mi = mutual_info_classif(U, codes, discrete_features=False, random_state=seed, n_jobs=-1)
     else:
-        mi = mutual_info_regression(U, target, discrete_features=False, random_state=seed)
+        mi = mutual_info_regression(U, target, discrete_features=False, random_state=seed, n_jobs=-1)
     return mi / np.log(2)
 
 
@@ -99,12 +120,15 @@ def pairwise_mi(a, a_kind, b, b_kind, seed=0):
 
 
 @torch.no_grad()
-def output_mi_table(model, x, y, Z):
+def output_mi_table(model, x, y, Z, logits=None):
     """MI between the network output and Y / the protected attributes.
 
     The output is taken two ways: the predicted probability P(>50K) (continuous) and
     the predicted class (discrete). The true label is included as a reference."""
-    prob = torch.softmax(model(x), dim=1)[:, 1].numpy()
+    if logits is None:
+        logits = model(x).numpy()
+
+    prob = torch.softmax(torch.from_numpy(logits), dim=1)[:, 1].numpy()
     outputs = {
         "P(>50K)": (prob, "continuous"),
         "clase predicha": ((prob > 0.5).astype(int), "discrete"),
@@ -122,9 +146,11 @@ def output_mi_table(model, x, y, Z):
     return pd.DataFrame(rows)
 
 
-def mi_table(model, x, y, Z):
+def mi_table(model, x, y, Z, activations=None):
+    if activations is None:
+        activations, _ = get_representations(model, x)
     tables = []
-    for layer, U in enumerate(hidden_activations(model, x)):
+    for layer, U in enumerate(activations):
         df = pd.DataFrame(
             {
                 "layer": layer,
@@ -147,43 +173,52 @@ def one_hot(values):
     codes, uniques = pd.factorize(values)
     return np.eye(len(uniques), dtype=np.float32)[codes]
 
-
-def mine_mi(x, y):
-    """I(x; y) in bits estimated with MINE. x and y are (n_samples, dim) arrays."""
+def mine_mi(x, y, device):
+    """I(x; y) en bits, utilizando MINE en el dispositivo indicado."""
     # fixed seed: the critic's training is random, so results would change on every run
     torch.manual_seed(0)
+
+    # Convertir los arrays de NumPy a tensores en GPU
+    x = torch.as_tensor(x, dtype=torch.float32, device=device)
+    y = torch.as_tensor(y, dtype=torch.float32, device=device)
+
     out = estimate_mi(
-        data=(x.astype(np.float32), y.astype(np.float32)),
+        data=(x, y),
         estimator="mine",
-        max_iterations=1000,
-        hidden_dims=[256, 128, 64],  # critic architecture
+        max_iterations=700,
+        hidden_dims=[256, 128, 64],
+        device=device,
         verbose=False,
     )
     mi = out[0] if isinstance(out, tuple) else out
-    return float(mi) / np.log(2)  # torch_mist returns nats
+    return float(mi) / np.log(2) # torch_mist returns nats
 
+def mine_table(model, x, y, Z, device, activations=None, logits=None):
+    if activations is None or logits is None:
+        activations, logits = get_representations(model, x)
 
-def mine_table(model, x, y, Z):
-    """MINE estimate for each hidden layer and the output logits (rows) and each
-    variable (columns, named by the plot labels)."""
-    # no torch.no_grad() here: it would also stop the MINE critic from training
-    with torch.no_grad():
-        logits = model(x).numpy()
-    layers = hidden_activations(model, x) + [logits]
+    layers = activations + [logits]
     layer_names = [f"Capa {i + 1}" for i in range(len(layers) - 1)] + ["Salida"]
+
     variables = {
         "sex": one_hot(Z["sex"].to_numpy()),
         "race": one_hot(Z["race"].to_numpy()),
         "age": Z["age"].to_numpy()[:, None],
         "Y": one_hot(y),
     }
-    table = pd.DataFrame(index=layer_names, columns=[v[0] for v in MINE_VARIABLES.values()], dtype=float)
+
+    table = pd.DataFrame(
+        index=layer_names,
+        columns=[v[0] for v in MINE_VARIABLES.values()],
+        dtype=float
+    )
+
     for key, (label, _, _) in MINE_VARIABLES.items():
         for name, U in zip(layer_names, layers):
-            table.loc[name, label] = mine_mi(U, variables[key])
+            table.loc[name, label] = mine_mi(U, variables[key], device)
             print(f"MINE {name} y {label}: {table.loc[name, label]:.4f} bits")
-    return table
 
+    return table
 
 # ---------------------------------------------------------------- plots
 
@@ -262,18 +297,41 @@ def plot_mine(table, path):
 
 
 if __name__ == "__main__":
-    HEATMAP_FIG.parent.mkdir(parents=True, exist_ok=True)
+    device = torch.device("cpu")
 
-    # Split para información mútua: train, val o test. Se usa el mismo split para KSG y MINE para poder comparar.
-    x, y = load_adult()[SPLITS[SPLIT]].tensors
+    print("Dispositivo MINE:", device)
+
+    if device.type == "cuda":
+        print("GPU:", torch.cuda.get_device_name(0))
+
+    HEATMAP_FIG.parent.mkdir(parents=True, exist_ok=True)
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Cargar los datos una sola vez
+    train, val, test = load_adult()
+    datasets = {"train": train, "val": val, "test": test}
+
+    # Cargar atributos protegidos una sola vez
+    X_raw, _ = fetch_adult(protected_attributes=[])
+
+    # Obtener datos del split seleccionado
+    x, y = datasets[SPLIT].tensors
     y = y.numpy()
-    Z = protected_attributes(SPLIT)
+    Z = protected_attributes(SPLIT, X_raw)
 
     # Obtener accuracy y matriz de confusión del modelo original
-    train, val, test = load_adult()
     trainer = L.Trainer(accelerator="auto", devices="auto", logger=False)
     model = load_model(RUN, x.shape[1])
-    results = trainer.test(model=model, dataloaders=data.DataLoader( test, batch_size=1024,num_workers=0))
+
+    results = trainer.test(
+        model=model,
+        dataloaders=data.DataLoader(
+            test,
+            batch_size=1024,
+            num_workers=0
+        )
+    )
+
     cm = model.confmat.cpu().numpy()
     y_true = []
     y_pred = []
@@ -286,40 +344,94 @@ if __name__ == "__main__":
     accuracy = np.trace(cm) / np.sum(cm)
     balanced_accuracy = balanced_accuracy_score(y_true, y_pred)
     f1_macro = f1_score(y_true, y_pred, average="macro")
-    
+
     metrics = {
         "accuracy": float(accuracy),
         "balanced_accuracy": float(balanced_accuracy),
         "f1_macro": float(f1_macro),
         "confusion_matrix": cm.tolist()
     }
+
     with open(OUT_DIR / "metrics.json", "w") as f:
         json.dump(metrics, f, indent=4)
 
+    # Obtener las representaciones de la red una sola vez
+    activations, logits = get_representations(model, x)
 
-    # Obtener información mutua por neurona y por capa, y guardar resultados
-    
+    # Obtener información mutua por neurona y por capa
     print(f"run: {RUN}, split: {SPLIT} ({len(y)} rows)")
 
     # KSG, per neuron
-    result = mi_table(model, x, y, Z)
+    result = mi_table(model, x, y, Z, activations)
     result.to_csv(NEURON_CSV, index=False)
-    output_result = output_mi_table(model, x, y, Z)
+
+    output_result = output_mi_table(model, x, y, Z, logits)
     output_result.to_csv(OUTPUT_CSV, index=False)
+
     plot_mi_heatmap(result, output_result, HEATMAP_FIG)
     print(f"saved {NEURON_CSV}, {OUTPUT_CSV}, {HEATMAP_FIG}")
 
     mi_cols = [c for c in result.columns if c.startswith("I(")]
     print("\nmean MI per layer (bits), averaged over neurons:")
     print(result.groupby("layer")[mi_cols + ["dead"]].mean().round(4))
+
     print("\nMI between the network output and each variable (bits):")
     print(output_result.set_index("output").round(4))
 
     # MINE, per layer
     print()
-    mine = mine_table(model, x, y, Z)
+    mine = mine_table(
+        model, x, y, Z, device,
+        activations=activations,
+        logits=logits
+    )
+
     mine.to_csv(MINE_CSV)
     plot_mine(mine, MINE_FIG)
+
     print(f"saved {MINE_CSV}, {MINE_FIG}")
     print("\nMINE per layer (bits):")
     print(mine.round(4))
+
+    # Estimar información mutua para conjunto test
+    x, y = datasets["test"].tensors
+    y = y.numpy()
+    Z = protected_attributes("test", X_raw)
+
+    # Obtener las representaciones de test una sola vez
+    activations, logits = get_representations(model, x)
+
+    print(f"run: {RUN}, split: test ({len(y)} rows)")
+
+    # KSG, per neuron
+    result = mi_table(model, x, y, Z, activations)
+    result.to_csv(TEST_NEURON_CSV, index=False)
+
+    output_result = output_mi_table(model, x, y, Z, logits)
+    output_result.to_csv(TEST_OUTPUT_CSV, index=False)
+
+    plot_mi_heatmap(result, output_result, TEST_HEATMAP_FIG)
+    print(f"saved {TEST_NEURON_CSV}, {TEST_OUTPUT_CSV}, {TEST_HEATMAP_FIG}")
+
+    mi_cols = [c for c in result.columns if c.startswith("I(")]
+    print("\nmean MI per layer (bits), averaged over neurons:")
+    print(result.groupby("layer")[mi_cols + ["dead"]].mean().round(4))
+
+    print("\nMI between the network output and each variable (bits):")
+    print(output_result.set_index("output").round(4))
+
+    # MINE, per layer
+    print()
+    mine = mine_table(
+        model, x, y, Z, device,
+        activations=activations,
+        logits=logits
+    )
+
+    mine.to_csv(TEST_MINE_CSV)
+    plot_mine(mine, TEST_MINE_FIG)
+
+    print(f"saved {TEST_MINE_CSV}, {TEST_MINE_FIG}")
+    print("\nMINE per layer (bits):")
+    print(mine.round(4))
+    

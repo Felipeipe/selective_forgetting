@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 import torch
 
-from main import LitMLP, load_adult
+from main import LitMLP, load_adult, fetch_adult
 from mutual_information import RUN, load_model, protected_attributes
 from results import INK, LABELS, confusion_matrix
 
@@ -166,7 +166,8 @@ if __name__ == "__main__":
     splits = {"train": 0, "val": 1, "test": 2}
     x, y = load_adult(protected_attributes=REMOVED_ATTRS)[splits[SPLIT]].tensors
     y = y.numpy()
-    groups = group_labels(protected_attributes(SPLIT))
+    X_raw, _ = fetch_adult(protected_attributes=[])
+    groups = group_labels(protected_attributes(SPLIT, X_raw))
 
     # original model
     model = load_model(RUN, x.shape[1])
